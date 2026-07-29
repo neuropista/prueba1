@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RetailX | Certificación de Posventa</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background: #0f172a; }
+        #canvas-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; }
+        .ui-layer { position: relative; z-index: 10; pointer-events: none; }
+        .pointer-auto { pointer-events: auto; }
+    </style>
+</head>
+<body class="text-white font-sans">
+
+    <div id="canvas-container"></div>
+
+    <div class="ui-layer absolute inset-0 flex flex-col justify-between p-6">
+        <header class="flex justify-between items-center bg-slate-900/80 p-4 rounded-xl border border-slate-700 pointer-auto backdrop-blur">
+            <h1 class="text-xl font-bold text-blue-400 uppercase tracking-widest">RetailX | Posventa</h1>
+            <div class="text-sm font-mono">Puntaje: <span id="score">0</span> | Nivel: <span id="level">1</span>/3</div>
+        </header>
+
+        <div id="game-overlay" class="bg-slate-900/90 p-8 rounded-2xl border border-blue-500/30 max-w-2xl mx-auto pointer-auto shadow-2xl backdrop-blur">
+            <div id="dialogue-box" class="mb-6">
+                <p id="client-text" class="text-lg italic leading-relaxed text-slate-200">"Iniciando evaluación de protocolos..."</p>
+            </div>
+            <div id="options-grid" class="grid grid-cols-1 gap-3"></div>
+            <div id="feedback-box" class="hidden mt-6 p-4 rounded-lg bg-slate-800 border border-slate-700"></div>
+            <button id="next-btn" class="hidden mt-6 w-full bg-blue-600 hover:bg-blue-500 py-3 rounded-lg font-bold uppercase transition-all">Siguiente</button>
+        </div>
+    </div>
+
+    <script>
+        const cases = [
+            { level: 1, text: "Cliente: 'Este producto no enciende. ¿Puedo devolverlo?'", hint: "El primer paso en cualquier gestión de posventa es siempre validar la existencia y fecha de la compra.", options: [
+                { text: "Solicitar boleta y validar garantía.", correct: true, feedback: "Validación de documento es el primer paso." },
+                { text: "Cambiarlo inmediatamente sin revisar.", correct: false, feedback: "Se debe validar la compra primero." },
+                { text: "Decirle que es problema de fábrica.", correct: false, feedback: "Debemos gestionar nosotros el reclamo inicial." }
+            ]},
+            { level: 1, text: "Cliente: '¿Es verdad que mi garantía es de 3 meses?'", hint: "No asumas que el cliente lo sabe todo. Tu rol como ejecutivo es educar e informar sobre las condiciones.", options: [
+                { text: "Explicar plazos y condiciones según ley.", correct: true, feedback: "Brindar información precisa genera confianza." },
+                { text: "Decirle que mire el manual.", correct: false, feedback: "La atención al cliente implica dar asesoría directa." },
+                { text: "No saber la respuesta.", correct: false, feedback: "Un ejecutivo debe conocer obligatoriamente la política." }
+            ]},
+            { level: 1, text: "Cliente: 'Quiero cambiar este producto que compré hace 2 horas.'", hint: "Aunque haya pasado poco tiempo, el estado del producto y el comprobante son requisitos indispensables.", options: [
+                { text: "Verificar empaque sellado y boleta.", correct: true, feedback: "El protocolo de cambio requiere empaque intacto." },
+                { text: "Aceptarlo sin preguntas.", correct: false, feedback: "Debemos cuidar el inventario y auditar el retorno." },
+                { text: "Negar el cambio.", correct: false, feedback: "Si cumple las normas y el plazo, debe proceder." }
+            ]},
+            { level: 2, text: "Cliente: 'Mi pedido llegó con 5 días de retraso, ¡es inaceptable!'", hint: "El cliente espera empatía. Evita culpar a terceros y asume la representación de RetailX.", options: [
+                { text: "Disculparse y gestionar compensación según política.", correct: true, feedback: "Empatía y solución activa son la clave." },
+                { text: "Culpar a la empresa de transporte.", correct: false, feedback: "RetailX es responsable final ante el cliente." },
+                { text: "Ignorar la queja.", correct: false, feedback: "La gestión de reclamos es prioritaria para la retención." }
+            ]},
+            { level: 2, text: "Cliente: 'El producto falla intermitentemente.'", hint: "No podemos desestimar la palabra del cliente sin una revisión técnica adecuada por expertos.", options: [
+                { text: "Registrar caso y derivar a servicio técnico.", correct: true, feedback: "Se requiere un seguimiento técnico adecuado." },
+                { text: "Decirle que no vemos fallas.", correct: false, feedback: "Debemos escuchar y creer en el cliente inicialmente." },
+                { text: "Ofrecer cambio sin revisar.", correct: false, feedback: "Necesitamos un diagnóstico técnico antes del cambio." }
+            ]},
+            { level: 2, text: "Cliente: 'El despacho dejó el producto en la vereda.'", hint: "La experiencia de entrega también es nuestra responsabilidad. Un mal servicio de terceros debe documentarse.", options: [
+                { text: "Disculparse y levantar reporte de servicio.", correct: true, feedback: "Un mal servicio logístico debe reportarse internamente." },
+                { text: "Decir que no es nuestra culpa.", correct: false, feedback: "Debemos asumir la responsabilidad de cara al cliente." },
+                { text: "No tomar acción.", correct: false, feedback: "Es una falta grave dejar pasar un error de protocolo." }
+            ]},
+            { level: 3, text: "Cliente: '¡Exijo el libro de reclamaciones ahora!'", hint: "El libro de reclamaciones es un derecho innegable del consumidor protegido por las autoridades.", options: [
+                { text: "Entregar el libro y documentar el caso.", correct: true, feedback: "Es un derecho legal y obligatorio del cliente." },
+                { text: "Negar el libro.", correct: false, feedback: "Negar el libro es sancionable por las entidades reguladoras." },
+                { text: "Llamar a seguridad.", correct: false, feedback: "Solo aplicable si hay violencia física, no quejas." }
+            ]},
+            { level: 3, text: "Cliente: 'Solicito devolución de dinero tras 40 días.'", hint: "Mantén firmeza en la política, pero siempre explicando el porqué (plazos legales) con total cortesía.", options: [
+                { text: "Explicar que está fuera de plazo de garantía.", correct: true, feedback: "Aplicación correcta de la política de plazos." },
+                { text: "Hacer una excepción especial.", correct: false, feedback: "La política de devoluciones debe ser equitativa." },
+                { text: "No responder.", correct: false, feedback: "Siempre debemos dar una respuesta formal y clara." }
+            ]}
+        ];
+
+        let currentIdx = 0;
+        let level = 1;
+        let score = 0;
+        let currentAttempts = 0;
+        let currentErrors = [];
+        let reportData = [];
+
+        function updateUI() {
+            document.getElementById('score').innerText = score;
+            document.getElementById('level').innerText = level;
+        }
+
+        function renderCase() {
+            const c = cases[currentIdx];
+            currentAttempts = 0;
+            currentErrors = [];
+            document.getElementById('client-text').innerText = c.text;
+            
+            const fbBox = document.getElementById('feedback-box');
+            fbBox.classList.add('hidden');
+            fbBox.className = "hidden mt-6 p-4 rounded-lg bg-slate-800 border border-slate-700"; // reset
+            
+            document.getElementById('next-btn').classList.add('hidden');
+            const grid = document.getElementById('options-grid');
+            grid.innerHTML = '';
+            
+            c.options.forEach((opt, idx) => {
+                const btn = document.createElement('button');
+                btn.className = "bg-slate-800 hover:bg-blue-900 border border-blue-800 p-4 rounded-lg text-left transition w-full option-btn";
+                btn.innerText = opt.text;
+                btn.id = `opt-${idx}`;
+                btn.onclick = () => handleChoice(opt, btn);
+                grid.appendChild(btn);
+            });
+        }
+
+        function handleChoice(opt, btnElement) {
+            const fbBox = document.getElementById('feedback-box');
+            fbBox.classList.remove('hidden');
+
+            if (opt.correct) {
+                // Deshabilitar todas las opciones al acertar
+                document.querySelectorAll('.option-btn').forEach(b => {
+                    b.disabled = true;
+                    b.classList.add('opacity-50', 'cursor-not-allowed');
+                });
+                
+                // Calcular puntos basados en intentos (2 a la primera, 1 a la segunda, 0 luego)
+                let pointsEarned = currentAttempts === 0 ? 2 : (currentAttempts === 1 ? 1 : 0);
+                score += pointsEarned;
+                
+                // Guardar en reporte
+                reportData.push({
+                    caseText: cases[currentIdx].text,
+                    attempts: currentAttempts + 1,
+                    points: pointsEarned,
+                    errors: [...currentErrors]
+                });
+
+                fbBox.className = "mt-6 p-4 rounded-lg bg-green-900/40 border border-green-500 text-green-100";
+                fbBox.innerHTML = `<strong>¡Correcto!</strong> ${opt.feedback}<br><span class="text-sm font-bold mt-2 inline-block text-green-300">Puntos obtenidos: +${pointsEarned}</span>`;
+                document.getElementById('next-btn').classList.remove('hidden');
+                updateUI();
+            } else {
+                currentAttempts++;
+                currentErrors.push(opt.text);
+                
+                // Deshabilitar solo la opción incorrecta seleccionada
+                btnElement.disabled = true;
+                btnElement.classList.replace('bg-slate-800', 'bg-red-900/30');
+                btnElement.classList.replace('hover:bg-blue-900', 'hover:bg-red-900/30');
+                btnElement.classList.add('opacity-40', 'cursor-not-allowed', 'border-red-800');
+
+                fbBox.className = "mt-6 p-4 rounded-lg bg-red-900/40 border border-red-500 text-red-100";
+                fbBox.innerHTML = `<strong>Incorrecto:</strong> ${opt.feedback}<br><br><span class="text-yellow-300 text-sm">💡 <strong>Pista para reintentar:</strong> ${cases[currentIdx].hint}</span>`;
+            }
+        }
+
+        function downloadReport() {
+            let content = "REPORTE DE EVALUACIÓN - RETAILX POSVENTA\n";
+            content += "========================================\n\n";
+            content += `Puntaje Final: ${score} / 16\n`;
+            content += `Resultado: ${score >= 8 ? '✅ APROBADO (Certificación Validada)' : '❌ REPROBADO (Requiere Refuerzo)'}\n\n`;
+            content += "DETALLE POR CASO:\n";
+            content += "----------------------------------------\n";
+            
+            reportData.forEach((data, index) => {
+                content += `CASO ${index + 1}:\n"${data.caseText}"\n`;
+                content += `Intentos para resolver: ${data.attempts}\n`;
+                content += `Puntos obtenidos: ${data.points}\n`;
+                if (data.errors.length > 0) {
+                    content += `Errores cometidos:\n - ${data.errors.join('\n - ')}\n`;
+                } else {
+                    content += `Errores cometidos: Ninguno (Resolución perfecta)\n`;
+                }
+                content += "----------------------------------------\n";
+            });
+
+            const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'Reporte_Evaluacion_RetailX.txt';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        document.getElementById('next-btn').onclick = () => {
+            currentIdx++;
+            if (currentIdx < cases.length) {
+                level = Math.floor(currentIdx / 3) + 1;
+                if(level > 3) level = 3; // Límite de 3 niveles
+                updateUI();
+                renderCase();
+            } else {
+                const win = score >= 8;
+                document.getElementById('game-overlay').innerHTML = `
+                    <div class="text-center">
+                        <h2 class="text-3xl font-bold mb-4 ${win ? 'text-green-400' : 'text-red-400'}">
+                            ${win ? '¡Certificación Completada!' : 'Reintento Necesario'}
+                        </h2>
+                        <p class="text-xl mb-6">Tu puntaje final es: <span class="font-bold">${score}/16</span></p>
+                        <div class="flex flex-col gap-3">
+                            <button onclick="downloadReport()" class="w-full bg-emerald-600 hover:bg-emerald-500 p-4 rounded-lg font-bold uppercase transition">Descargar Reporte Detallado</button>
+                            <button onclick="location.reload()" class="w-full bg-slate-700 hover:bg-slate-600 p-4 rounded-lg font-bold uppercase transition">Reiniciar Simulador</button>
+                        </div>
+                    </div>
+                `;
+            }
+        };
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0f172a); // Coincide con bg-slate-900
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        // Suelo
+        const floorGeo = new THREE.PlaneGeometry(30, 30);
+        const floorMat = new THREE.MeshLambertMaterial({ color: 0x1e293b }); // slate-800
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+
+        // Mostrador de atención (Punto de vista del jugador)
+        const counterGeo = new THREE.BoxGeometry(8, 1.2, 1.5);
+        const counterMat = new THREE.MeshLambertMaterial({ color: 0x334155 }); // slate-700
+        const counter = new THREE.Mesh(counterGeo, counterMat);
+        counter.position.set(0, 0.6, -1.5);
+        scene.add(counter);
+
+        const customerGroup = new THREE.Group();
+        customerGroup.position.set(0, 0, -3.5); // Al otro lado del mostrador
+        
+        // Cuerpo del cliente
+        const bodyGeo = new THREE.CylinderGeometry(0.5, 0.4, 1.6, 6);
+        const bodyMat = new THREE.MeshLambertMaterial({ color: 0xef4444 }); // Rojo (tensión/molestia)
+        const body = new THREE.Mesh(bodyGeo, bodyMat);
+        body.position.y = 1.2; 
+        customerGroup.add(body);
+
+        // Cabeza
+        const headGeo = new THREE.IcosahedronGeometry(0.35, 0); 
+        const headMat = new THREE.MeshLambertMaterial({ color: 0xfcd34d }); // Tono abstracto
+        const head = new THREE.Mesh(headGeo, headMat);
+        head.position.y = 2.2;
+        head.rotation.x = 0.15; // Ligeramente inclinado hacia adelante (reclamando)
+        customerGroup.add(head);
+
+        // Brazos cruzados
+        const armGeo = new THREE.CylinderGeometry(0.1, 0.1, 1, 6);
+        const armMat = new THREE.MeshLambertMaterial({ color: 0xdc2626 }); // Rojo más oscuro
+        const arm1 = new THREE.Mesh(armGeo, armMat);
+        arm1.position.set(0, 1.4, 0.4);
+        arm1.rotation.set(Math.PI / 2, 0, Math.PI / 4);
+        customerGroup.add(arm1);
+
+        const arm2 = new THREE.Mesh(armGeo, armMat);
+        arm2.position.set(0, 1.45, 0.45);
+        arm2.rotation.set(Math.PI / 2, 0, -Math.PI / 4);
+        customerGroup.add(arm2);
+
+        scene.add(customerGroup);
+
+        // Iluminación
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(0, 5, 2);
+        scene.add(dirLight);
+
+        // Posición de la cámara simulando al ejecutivo detrás del mostrador
+        camera.position.set(0, 1.8, 0.5);
+        camera.lookAt(0, 1.5, -3.5);
+
+        function animate() {
+            requestAnimationFrame(animate);
+            // Animación sutil de respiración/tensión del cliente
+            const time = Date.now() * 0.002;
+            customerGroup.position.y = Math.sin(time) * 0.02; 
+            head.rotation.y = Math.sin(time * 0.5) * 0.05; 
+            renderer.render(scene, camera);
+        }
+
+        // Responsividad 3D
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        window.onload = () => { renderCase(); animate(); };
+    </script>
+</body>
+</html>
